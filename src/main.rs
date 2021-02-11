@@ -62,6 +62,7 @@ pub fn load_from_file<T: DeserializeOwned>(path: &Path) -> T {
 async fn install_toolchain(version: &RustVersion) {
     info!("Installing rust toolchain '{}'", &version.name);
     let mut rustup = process::Command::new("rustup")
+        .arg("toolchain")
         .arg("install")
         .arg(&version.name)
         .stdout(Stdio::null())
