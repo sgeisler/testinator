@@ -155,7 +155,11 @@ async fn test_rust_version(
     delete_path_sender: mpsc::Sender<PathBuf>,
     tripwire: watch::Receiver<bool>,
 ) {
-    info!("Preparing environment for rust {} tests", rust.name);
+    info!(
+        "Preparing environment for rust {} tests ({} configurations)",
+        rust.name,
+        feature_sets.len()
+    );
     let project_name = cfg.repo.iter().last().unwrap().to_str().unwrap();
     let tmp_dir = TempDir::new(&format!("{}-{}", project_name, rust.name)).unwrap();
 
