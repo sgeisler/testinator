@@ -1,0 +1,47 @@
+{
+  "repo": "/home/user/projects/rust-bitcoin",
+  "rust": [
+    {
+      "name": "nightly"
+    },
+    {
+      "name": "stable"
+    },
+    {
+      "name": "1.29.0",
+      "requires_pinning": [
+        {
+          "dependency": "cc",
+          "version": "1.0.41"
+        },
+        {
+          "dependency": "serde",
+          "version": "1.0.98"
+        },
+        {
+          "dependency": "serde_derive",
+          "version": "1.0.98"
+        },
+        {
+          "dependency": "byteorder",
+          "version": "1.3.4"
+        }
+      ]
+    }
+  ],
+  "features" : [
+    {
+      "name": "unstable",
+      "min_rust": "nightly"
+    },
+    {
+      "name": "use-serde"
+    }
+  ],
+  "par": 2,
+  "fuzzing": {
+    "rust": "nightly",
+    "rel_path": "fuzz",
+    "duration_s": 30
+  }
+}
