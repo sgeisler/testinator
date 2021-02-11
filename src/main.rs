@@ -17,6 +17,8 @@ use tracing_subscriber::EnvFilter;
 #[derive(StructOpt)]
 struct Opts {
     cfg: PathBuf,
+    #[structopt(long)]
+    install: bool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -285,8 +287,10 @@ async fn main() {
     let opts: Opts = StructOpt::from_args();
     let cfg: Config = load_from_file(&opts.cfg);
 
-    for rust in cfg.rust.iter() {
-        install_toolchain(rust).await;
+    if opts.install {
+        for rust in cfg.rust.iter() {
+            install_toolchain(rust).await;
+        }
     }
 
     let test_matrix = gen_test_matrix(&cfg).await;
