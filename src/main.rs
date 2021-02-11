@@ -8,9 +8,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::process::Stdio;
+use std::time::Duration;
+use stream_cancel::{StreamExt as ScStreamExt, Trigger, Tripwire};
 use structopt::StructOpt;
 use tempdir::TempDir;
 use tokio::process;
+use tokio::select;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, Level};
 use tracing_subscriber::EnvFilter;
 
@@ -144,10 +148,20 @@ async fn gen_test_matrix(cfg: &Config) -> HashMap<RustVersion, Vec<Vec<Feature>>
         .collect::<HashMap<_, _>>()
 }
 
-async fn test_rust_version(cfg: Config, rust: RustVersion, feature_sets: Vec<Vec<Feature>>) {
+async fn test_rust_version(
+    cfg: Config,
+    rust: RustVersion,
+    feature_sets: Vec<Vec<Feature>>,
+    delete_path_sender: mpsc::Sender<PathBuf>,
+) {
     info!("Preparing environment for rust {} tests", rust.name);
     let project_name = cfg.repo.iter().last().unwrap().to_str().unwrap();
     let tmp_dir = TempDir::new(&format!("{}-{}", project_name, rust.name)).unwrap();
+
+    delete_path_sender
+        .send(tmp_dir.path().to_path_buf())
+        .await
+        .unwrap();
 
     let tmp_dir_path = tmp_dir.path().to_path_buf();
     let repo_path = cfg.repo.to_path_buf();
@@ -288,6 +302,32 @@ async fn fuzz_test(base_path: &Path, cfg: &Fuzzing) {
     }
 }
 
+async fn delete_paths_on_shutdown(mut path_receiver: mpsc::Receiver<PathBuf>, tw_trigger: Trigger) {
+    let mut paths = Vec::<PathBuf>::new();
+    loop {
+        select! {
+            _ = tokio::signal::ctrl_c() => {
+                tw_trigger.cancel();
+                tokio::time::sleep(Duration::from_millis(500)).await;
+                for path in paths {
+                    debug!("Trying to delete {} before shutdown", path.to_str().unwrap());
+                    process::Command::new("rm")
+                        .arg("-rf")
+                        .arg(path)
+                        .status()
+                        .await
+                        .unwrap();
+                }
+                info!("Shutting down ...");
+                exit(0);
+            },
+            Some(path) = path_receiver.recv() => {
+                paths.push(path);
+            }
+        };
+    }
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -304,13 +344,25 @@ async fn main() {
     }
 
     let test_matrix = gen_test_matrix(&cfg).await;
+    let (delete_path_sender, delete_path_receiver) = mpsc::channel(4);
+    let (trigger, tripwire) = Tripwire::new();
+
+    tokio::spawn(delete_paths_on_shutdown(delete_path_receiver, trigger));
 
     // TODO: allow more parallelism than just amount of rust version to test
     futures::stream::iter(test_matrix)
+        .take_until_if(tripwire.clone())
         .for_each_concurrent(cfg.par, |(rust, feature_sets)| {
-            test_rust_version(cfg.clone(), rust.clone(), feature_sets)
+            test_rust_version(
+                cfg.clone(),
+                rust.clone(),
+                feature_sets,
+                delete_path_sender.clone(),
+            )
         })
         .await;
+
+    tokio::time::sleep(Duration::from_millis(1500)).await;
 
     if let Some(ref fuzz) = cfg.fuzzing {
         fuzz_test(&cfg.repo, fuzz).await;
