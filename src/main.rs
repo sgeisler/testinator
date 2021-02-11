@@ -9,12 +9,12 @@ use std::path::{Path, PathBuf};
 use std::process::exit;
 use std::process::Stdio;
 use std::time::Duration;
-use stream_cancel::{StreamExt as ScStreamExt, Trigger, Tripwire};
+use stream_cancel::StreamExt as ScStreamExt;
 use structopt::StructOpt;
 use tempdir::TempDir;
 use tokio::process;
 use tokio::select;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tracing::{debug, error, info, Level};
 use tracing_subscriber::EnvFilter;
 
@@ -153,6 +153,7 @@ async fn test_rust_version(
     rust: RustVersion,
     feature_sets: Vec<Vec<Feature>>,
     delete_path_sender: mpsc::Sender<PathBuf>,
+    tripwire: watch::Receiver<bool>,
 ) {
     info!("Preparing environment for rust {} tests", rust.name);
     let project_name = cfg.repo.iter().last().unwrap().to_str().unwrap();
@@ -188,6 +189,9 @@ async fn test_rust_version(
     }
 
     for feature_set in feature_sets {
+        if *tripwire.borrow() {
+            return;
+        }
         run_test(&workdir, &rust, &feature_set).await;
     }
 }
@@ -302,12 +306,15 @@ async fn fuzz_test(base_path: &Path, cfg: &Fuzzing) {
     }
 }
 
-async fn delete_paths_on_shutdown(mut path_receiver: mpsc::Receiver<PathBuf>, tw_trigger: Trigger) {
+async fn delete_paths_on_shutdown(
+    mut path_receiver: mpsc::Receiver<PathBuf>,
+    tw_trigger: watch::Sender<bool>,
+) {
     let mut paths = Vec::<PathBuf>::new();
     loop {
         select! {
             _ = tokio::signal::ctrl_c() => {
-                tw_trigger.cancel();
+                tw_trigger.send(true).unwrap();
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 for path in paths {
                     debug!("Trying to delete {} before shutdown", path.to_str().unwrap());
@@ -328,6 +335,11 @@ async fn delete_paths_on_shutdown(mut path_receiver: mpsc::Receiver<PathBuf>, tw
     }
 }
 
+async fn borrow_tripwire(mut tripwire: watch::Receiver<bool>) -> bool {
+    tripwire.changed().await.unwrap();
+    *tripwire.borrow()
+}
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
@@ -345,26 +357,31 @@ async fn main() {
 
     let test_matrix = gen_test_matrix(&cfg).await;
     let (delete_path_sender, delete_path_receiver) = mpsc::channel(4);
-    let (trigger, tripwire) = Tripwire::new();
+    let (trigger, tripwire) = watch::channel(false);
 
-    tokio::spawn(delete_paths_on_shutdown(delete_path_receiver, trigger));
+    let shutdowm = tokio::spawn(delete_paths_on_shutdown(delete_path_receiver, trigger));
 
     // TODO: allow more parallelism than just amount of rust version to test
     futures::stream::iter(test_matrix)
-        .take_until_if(tripwire.clone())
+        .take_until_if(borrow_tripwire(tripwire.clone()))
         .for_each_concurrent(cfg.par, |(rust, feature_sets)| {
             test_rust_version(
                 cfg.clone(),
                 rust.clone(),
                 feature_sets,
                 delete_path_sender.clone(),
+                tripwire.clone(),
             )
         })
         .await;
 
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
 
-    if let Some(ref fuzz) = cfg.fuzzing {
-        fuzz_test(&cfg.repo, fuzz).await;
+    if !*tripwire.borrow() {
+        if let Some(ref fuzz) = cfg.fuzzing {
+            fuzz_test(&cfg.repo, fuzz).await;
+        }
+    } else {
+        shutdowm.await.unwrap();
     }
 }
