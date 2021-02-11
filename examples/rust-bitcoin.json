@@ -31,17 +31,32 @@
   ],
   "features" : [
     {
+      "name": "secp-recovery"
+    },
+    {
+      "name": "use-serde"
+    },
+    {
+      "name": "base64"
+    },
+    {
+      "name": "secp-lowmemory"
+    },
+    {
+      "name": "rand"
+    },
+    {
       "name": "unstable",
       "min_rust": "nightly"
     },
     {
-      "name": "use-serde"
+      "name": "bitcoinconsensus"
     }
   ],
-  "par": 2,
+  "par": 3,
   "fuzzing": {
     "rust": "nightly",
     "rel_path": "fuzz",
-    "duration_s": 30
+    "duration_s": 60
   }
 }
