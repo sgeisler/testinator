@@ -258,7 +258,7 @@ async fn fuzz_test(base_path: &Path, cfg: &Fuzzing) {
     // TODO: add hfuzz inputs from repo
     for fuzz_target in fuzz_targets {
         info!("Fuzzing {}", fuzz_target);
-        let mut cargo = process::Command::new("cargo")
+        let cargo = process::Command::new("cargo")
             .current_dir(base_path.join(&cfg.rel_path))
             .env("HFUZZ_BUILD_ARGS", "--features honggfuzz_fuzz")
             .env(
@@ -269,12 +269,21 @@ async fn fuzz_test(base_path: &Path, cfg: &Fuzzing) {
             .arg("hfuzz")
             .arg("run")
             .arg(&fuzz_target)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("cargo failed to execute");
-        if cargo.wait().await.unwrap().success() {
+
+        let output = cargo.wait_with_output().await.unwrap();
+
+        if output.status.success() {
             info!("Successfully fuzzed {}", fuzz_target);
         } else {
             error!("Error while fuzzing {}", fuzz_target);
+            info!("std out:\n");
+            std::io::stdout().write_all(&output.stdout).unwrap();
+            info!("std err:\n");
+            std::io::stdout().write_all(&output.stderr).unwrap();
         }
     }
 }
