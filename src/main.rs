@@ -145,6 +145,7 @@ async fn gen_test_matrix(cfg: &Config) -> HashMap<RustVersion, Vec<Vec<Feature>>
 }
 
 async fn test_rust_version(cfg: Config, rust: RustVersion, feature_sets: Vec<Vec<Feature>>) {
+    info!("Preparing environment for rust {} tests", rust.name);
     let project_name = cfg.repo.iter().last().unwrap().to_str().unwrap();
     let tmp_dir = TempDir::new(&format!("{}-{}", project_name, rust.name)).unwrap();
 
