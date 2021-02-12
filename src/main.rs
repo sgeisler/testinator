@@ -23,6 +23,8 @@ struct Opts {
     cfg: PathBuf,
     #[structopt(long)]
     install: bool,
+    #[structopt(long)]
+    simple: bool,
 }
 
 #[derive(Clone, Deserialize)]
@@ -124,13 +126,13 @@ fn versions_geq(v1: &str, v2: &str, stable: &Version) -> bool {
     }
 }
 
-async fn gen_test_matrix(cfg: &Config) -> HashMap<RustVersion, Vec<Vec<Feature>>> {
+async fn gen_test_matrix(cfg: &Config, simple: bool) -> HashMap<RustVersion, Vec<Vec<Feature>>> {
     let stable_version = get_stable_version().await;
     cfg.rust
         .iter()
         .cloned()
         .map(|rust| {
-            let feature_sets = cfg
+            let version_features = cfg
                 .features
                 .iter()
                 .filter(|f| {
@@ -140,9 +142,17 @@ async fn gen_test_matrix(cfg: &Config) -> HashMap<RustVersion, Vec<Vec<Feature>>
                         true
                     }
                 })
-                .cloned()
-                .powerset()
-                .collect::<Vec<_>>();
+                .cloned();
+            let feature_sets = if simple {
+                let all = version_features.collect::<Vec<_>>();
+                let mut features = all.iter().cloned().map(|f| vec![f]).collect::<Vec<_>>();
+                features.push(all);
+                features.push(vec![]);
+                features
+            } else {
+                version_features.powerset().collect::<Vec<_>>()
+            };
+
             (rust, feature_sets)
         })
         .collect::<HashMap<_, _>>()
@@ -359,7 +369,7 @@ async fn main() {
         }
     }
 
-    let test_matrix = gen_test_matrix(&cfg).await;
+    let test_matrix = gen_test_matrix(&cfg, opts.simple).await;
     let (delete_path_sender, delete_path_receiver) = mpsc::channel(4);
     let (trigger, tripwire) = watch::channel(false);
 

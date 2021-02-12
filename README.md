@@ -4,6 +4,7 @@
 `testinator` is mostly controlled via configuration files, one for each project. A few command line options exist and
 may be extended in the future:
   * `--install`: install the required toolchains through rustup
+  * `--simple`: don't run all configurations, run: no features, all features, each feature alone
 
 ```
 testinator path/to/config.json [--install]
