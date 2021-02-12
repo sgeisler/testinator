@@ -19,6 +19,10 @@ limited by the `par` config option)
 
 During normal operation only logs are written, only if tests fail their output is also printed for debugging purposes.
 
+Example output for the included [rust-bitcoin configuration](examples/rust-bitcoin.json):
+
+![example logs](examples/rust-bitcoin-output.png)
+
 ## Config
 ```json5
 {
