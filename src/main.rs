@@ -15,7 +15,7 @@ use tempdir::TempDir;
 use tokio::process;
 use tokio::select;
 use tokio::sync::{mpsc, watch};
-use tracing::{debug, error, info, Level};
+use tracing::{debug, error, info};
 use tracing_subscriber::EnvFilter;
 
 #[derive(StructOpt)]
@@ -354,11 +354,17 @@ async fn borrow_tripwire(mut tripwire: watch::Receiver<bool>) -> bool {
     *tripwire.borrow()
 }
 
+const DEFAULT_FILTER: &'static str = "info";
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env().add_directive(Level::DEBUG.into()))
+        .with_env_filter(EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+            eprintln!("Falling back to default log filter '{}'", DEFAULT_FILTER);
+            EnvFilter::new(DEFAULT_FILTER)
+        }))
         .init();
+    info!("Starting testinator ...");
 
     let opts: Opts = StructOpt::from_args();
     let cfg: Config = load_from_file(&opts.cfg);
